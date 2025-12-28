@@ -351,21 +351,11 @@ class ASVspoof19TrainDataset(Dataset):
 
     def cache_all_features(self):
         """Compute all features once (on the configured device) and keep them in memory."""
-        if self.cache_data is not None:
-            return
-
         cached: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]] = []
-        with torch.inference_mode():
-            for idx in tqdm(range(len(self.entries)), desc="Caching features", leave=False):
+        for idx in range(len(self.entries)):
+            with torch.no_grad():
                 wave, lfcc, dct2d, label = self._compute_item(idx)
-                cached.append(
-                    (
-                        wave.to(self.feature_device),
-                        lfcc.to(self.feature_device),
-                        dct2d.to(self.feature_device),
-                        label.to(self.feature_device),
-                    )
-                )
+            cached.append((wave.to(self.feature_device), lfcc.to(self.feature_device), dct2d.to(self.feature_device), label.to(self.feature_device)))
         self.cache_data = cached
 
     # ------------------------------------------------------------------
