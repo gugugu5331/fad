@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Callable, Optional, Tuple, List
 
 from feature import dct2d
+from tqdm import tqdm
 from spafe.utils.preprocessing import pre_emphasis, framing, windowing, zero_handling
 from spafe.utils.exceptions import ParameterError, ErrorMsgs
 from spafe.fbanks.mel_fbanks import mel_filter_banks
@@ -45,7 +46,7 @@ def _mel2hz(mel): return 700.0 * (10**(mel / 2595.) - 1)
 # ------------------------------------------------------------------
 # 1️⃣  compute_feature  (外部名字保持不变) ---------------------------
 # ------------------------------------------------------------------
-def compute_feature(raw_data, sr):
+def compute_feature(raw_data, sr, device: str | torch.device = "cpu"):
     """
     Pad + Mel-2D-DCT 特征 (torch 实现).
     return: Tensor(float32)  shape = (n_frames, 40)
@@ -53,7 +54,7 @@ def compute_feature(raw_data, sr):
     if not isinstance(raw_data, torch.Tensor):
         raw_data = torch.from_numpy(raw_data)
     x = pad(raw_data)                     # (T,)
-    return mel_2D(x, fs=sr)               # 调用同文件下的新 mel_2D
+    return mel_2D(x, fs=sr, device=device)  # 调用同文件下的新 mel_2D
 
 def dct_t(x: torch.Tensor, dim: int = -1, norm: str | None = "ortho"):
     """torch-dct 的 dim-aware 包装：在任意维上做 DCT-II。"""
@@ -287,6 +288,8 @@ class ASVspoof19TrainDataset(Dataset):
         self.root_spec = Path(root_spec) if root_spec else None
         self.pad_to = pad_to
         self.augment_fn = process_Rawboost_feature
+        self.feature_device = device or "cpu"
+        self.cache_data: Optional[List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]] = None
 
         # torchaudio LFCC extractor
         self.lfcc_tf = torchaudio.transforms.LFCC(
@@ -294,8 +297,8 @@ class ASVspoof19TrainDataset(Dataset):
             speckwargs={"n_fft": 1024, "win_length": 320, "hop_length": 160},
             n_filter=60, n_lfcc=20,
         )
-        # if device and torch.cuda.is_available():
-        #     self.lfcc_tf = self.lfcc_tf.to(device)
+        if self.feature_device and torch.cuda.is_available() and str(self.feature_device).startswith("cuda"):
+            self.lfcc_tf = self.lfcc_tf.to(self.feature_device)
 
     # ------------------------------------------------------------------
     # helpers
@@ -321,6 +324,7 @@ class ASVspoof19TrainDataset(Dataset):
           (B, 60, T)  → model 逻辑会自动 unsqueeze 给 (B,1,60,T).
         """
       #  print(wave.shape)
+        wave = wave.to(self.feature_device)
         lfcc = self.lfcc_tf(wave)               # (20, T)
         d1   = torch.diff(lfcc, n=1, dim=1)     # (20, T-1)
         d2   = torch.diff(d1,  n=1, dim=1)      # (20, T-2)
@@ -329,27 +333,55 @@ class ASVspoof19TrainDataset(Dataset):
         spec = torch.cat([lfcc, d1, d2], dim=0)      # (60, T)
         return spec
 
-    # ------------------------------------------------------------------
-    # Dataset protocol
-    # ------------------------------------------------------------------
-
-    def __len__(self):
-        return len(self.entries)
-
-    def __getitem__(self, idx: int):
+    def _compute_item(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         utt, label = self.entries[idx]
         wave = self._load_wave(utt)
         wave = _pad_wave(wave, self.pad_to)
         if self.augment_fn:
-            wave = self.augment_fn(wave,16000,self.args,self.algo)
+            wave = self.augment_fn(wave, 16000, self.args, self.algo)
 
         if self.root_spec:
             spec_path = self.root_spec / f"{utt}.npy"
             lfcc = torch.from_numpy(np.load(spec_path)).float()  # assume (C,F,T)
         else:
             lfcc = self._make_spec(wave)
-        dct2d = compute_feature(wave,16000)
-        return wave, lfcc, dct2d,torch.tensor(label, dtype=torch.long)
+
+        dct2d = compute_feature(wave, 16000, device=self.feature_device)
+        return wave, lfcc, dct2d, torch.tensor(label, dtype=torch.long)
+
+    def cache_all_features(self):
+        """Compute all features once (on the configured device) and keep them in memory."""
+        if self.cache_data is not None:
+            return
+
+        cached: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]] = []
+        with torch.inference_mode():
+            for idx in tqdm(range(len(self.entries)), desc="Caching features", leave=False):
+                wave, lfcc, dct2d, label = self._compute_item(idx)
+                cached.append(
+                    (
+                        wave.to(self.feature_device),
+                        lfcc.to(self.feature_device),
+                        dct2d.to(self.feature_device),
+                        label.to(self.feature_device),
+                    )
+                )
+        self.cache_data = cached
+
+    # ------------------------------------------------------------------
+    # Dataset protocol
+    # ------------------------------------------------------------------
+
+    def __len__(self):
+        """Return dataset size based on cached features when present."""
+        if self.cache_data is not None:
+            return len(self.cache_data)
+        return len(self.entries)
+
+    def __getitem__(self, idx: int):
+        if self.cache_data is not None:
+            return self.cache_data[idx]
+        return self._compute_item(idx)
 
 
 class ASVspoof21EvalDataset(Dataset):
@@ -363,8 +395,9 @@ class ASVspoof21EvalDataset(Dataset):
     ) -> None:
         super().__init__()
         self.list_IDs = list_IDs
-        self.base_dir = Path(base_dir) 
+        self.base_dir = Path(base_dir)
         self.pad_to = pad_to
+        self.feature_device = device or "cpu"
 
         # LFCC extractor (moved to cuda if wanted)
         self.lfcc_tf = torchaudio.transforms.LFCC(
@@ -372,8 +405,8 @@ class ASVspoof21EvalDataset(Dataset):
             speckwargs={"n_fft": 1024, "win_length": 320, "hop_length": 160},
             n_filter=60, n_lfcc=20,
         )
-        if device and torch.cuda.is_available():
-            self.lfcc_tf = self.lfcc_tf
+        if self.feature_device and torch.cuda.is_available() and str(self.feature_device).startswith("cuda"):
+            self.lfcc_tf = self.lfcc_tf.to(self.feature_device)
 
     # --------------------------------------------------------------
     def __len__(self):
@@ -384,6 +417,7 @@ class ASVspoof21EvalDataset(Dataset):
         Returned tensor layout works with ResNet branch:
           (B, 60, T)  → model 逻辑会自动 unsqueeze 给 (B,1,60,T).
         """
+        wave = wave.to(self.feature_device)
         lfcc = self.lfcc_tf(wave)               # (20, T)
         d1   = torch.diff(lfcc, n=1, dim=1)     # (20, T-1)
         d2   = torch.diff(d1,  n=1, dim=1)      # (20, T-2)
@@ -400,7 +434,7 @@ class ASVspoof21EvalDataset(Dataset):
         wave_t = torch.from_numpy(wave).float()
 
         lfcc = self._make_spec(wave_t)
-        dct2d = compute_feature(wave_t,16000).float()
+        dct2d = compute_feature(wave_t,16000, device=self.feature_device).float()
         return wave_t, lfcc,dct2d, utt
     
 class Dataset_ASVspoof2019_train_NPY(Dataset):
