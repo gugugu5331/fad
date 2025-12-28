@@ -171,12 +171,12 @@ def main(args: argparse.Namespace):
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--train_protocol", type=Path,default="/root/shared-nvme/SLSforASVspoof-2021-DF/database/ASVspoof_DF_cm_protocols/ASVspoof2019.LA.cm.train.trn.txt")
-    ap.add_argument("--train_wave_dir", type=Path,default="/root/shared-nvme/data/LA/ASVspoof2019_LA_train/flac")
-    ap.add_argument("--dev_protocol", type=Path,default="/root/shared-nvme/SLSforASVspoof-2021-DF/database/ASVspoof_DF_cm_protocols/ASVspoof2019.LA.cm.dev.trl.txt")
-    ap.add_argument("--dev_wave_dir", type=Path,default= "/root/shared-nvme/data/LA/ASVspoof2019_LA_dev/flac")
-    ap.add_argument("--eval_list", type=Path,default="/root/shared-nvme/SLSforASVspoof-2021-DF/database/ASVspoof_DF_cm_protocols/ASVspoof2021.LA.cm.eval.trl.txt")
-    ap.add_argument("--eval_wave_dir", type=Path,default="/root/shared-nvme/data/asvspoof2021/ASVspoof2021_LA_eval/flac")
+    ap.add_argument("--train_protocol", type=Path,default="/ssd/lxx/code/database/ASVspoof_cm_protocols/ASVspoof2019.LA.cm.train.trn.txt")
+    ap.add_argument("--train_wave_dir", type=Path,default="/ssd/lxx/LA/ASVspoof2019_LA_train/flac")
+    ap.add_argument("--dev_protocol", type=Path,default="/ssd/lxx/code/database/ASVspoof_cm_protocols/ASVspoof2019.LA.cm.dev.trl.txt")
+    ap.add_argument("--dev_wave_dir", type=Path,default= "/ssd/lxx/LA/ASVspoof2019_LA_dev/flac")
+    ap.add_argument("--eval_list", type=Path,default="/ssd/lxx/code/database/ASVspoof_cm_protocols/ASVspoof2019.LA.cm.eval.trl.txt")
+    ap.add_argument("--eval_wave_dir", type=Path,default="/ssd/lxx/LA/ASVspoof2019_LA_eval/flac")
     ap.add_argument("--pad_to", type=int, default=64600)
     ap.add_argument("--batch_size", type=int, default=64)
     ap.add_argument("--epochs", type=int, default=50)
