@@ -322,6 +322,7 @@ class ASVspoof19TrainDataset(Dataset):
           (B, 60, T)  → model 逻辑会自动 unsqueeze 给 (B,1,60,T).
         """
       #  print(wave.shape)
+        wave = wave.to(self.feature_device)
         lfcc = self.lfcc_tf(wave)               # (20, T)
         d1   = torch.diff(lfcc, n=1, dim=1)     # (20, T-1)
         d2   = torch.diff(d1,  n=1, dim=1)      # (20, T-2)
@@ -386,6 +387,7 @@ class ASVspoof21EvalDataset(Dataset):
         Returned tensor layout works with ResNet branch:
           (B, 60, T)  → model 逻辑会自动 unsqueeze 给 (B,1,60,T).
         """
+        wave = wave.to(self.feature_device)
         lfcc = self.lfcc_tf(wave)               # (20, T)
         d1   = torch.diff(lfcc, n=1, dim=1)     # (20, T-1)
         d2   = torch.diff(d1,  n=1, dim=1)      # (20, T-2)
