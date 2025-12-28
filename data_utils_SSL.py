@@ -288,7 +288,6 @@ class ASVspoof19TrainDataset(Dataset):
         self.pad_to = pad_to
         self.augment_fn = process_Rawboost_feature
         self.feature_device = device or "cpu"
-        self.cache_data: Optional[List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]] = None
 
         # torchaudio LFCC extractor
         self.lfcc_tf = torchaudio.transforms.LFCC(
@@ -344,33 +343,8 @@ class ASVspoof19TrainDataset(Dataset):
             lfcc = torch.from_numpy(np.load(spec_path)).float()  # assume (C,F,T)
         else:
             lfcc = self._make_spec(wave)
-
-        dct2d = compute_feature(wave, 16000, device=self.feature_device)
-        return wave, lfcc, dct2d, torch.tensor(label, dtype=torch.long)
-
-    def cache_all_features(self):
-        """Compute all features once (on the configured device) and keep them in memory."""
-        cached: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]] = []
-        for idx in range(len(self.entries)):
-            with torch.no_grad():
-                wave, lfcc, dct2d, label = self._compute_item(idx)
-            cached.append((wave.to(self.feature_device), lfcc.to(self.feature_device), dct2d.to(self.feature_device), label.to(self.feature_device)))
-        self.cache_data = cached
-
-    # ------------------------------------------------------------------
-    # Dataset protocol
-    # ------------------------------------------------------------------
-
-    def __len__(self):
-        """Return dataset size based on cached features when present."""
-        if self.cache_data is not None:
-            return len(self.cache_data)
-        return len(self.entries)
-
-    def __getitem__(self, idx: int):
-        if self.cache_data is not None:
-            return self.cache_data[idx]
-        return self._compute_item(idx)
+        dct2d = compute_feature(wave,16000, device=self.feature_device)
+        return wave, lfcc, dct2d,torch.tensor(label, dtype=torch.long)
 
 
 class ASVspoof21EvalDataset(Dataset):
