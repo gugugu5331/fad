@@ -331,19 +331,12 @@ class ASVspoof19TrainDataset(Dataset):
         spec = torch.cat([lfcc, d1, d2], dim=0)      # (60, T)
         return spec
 
-    # ------------------------------------------------------------------
-    # Dataset protocol
-    # ------------------------------------------------------------------
-
-    def __len__(self):
-        return len(self.entries)
-
-    def __getitem__(self, idx: int):
+    def _compute_item(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         utt, label = self.entries[idx]
         wave = self._load_wave(utt)
         wave = _pad_wave(wave, self.pad_to)
         if self.augment_fn:
-            wave = self.augment_fn(wave,16000,self.args,self.algo)
+            wave = self.augment_fn(wave, 16000, self.args, self.algo)
 
         if self.root_spec:
             spec_path = self.root_spec / f"{utt}.npy"
