@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Callable, Optional, Tuple, List
 
 from feature import dct2d
+from tqdm import tqdm
 from spafe.utils.preprocessing import pre_emphasis, framing, windowing, zero_handling
 from spafe.utils.exceptions import ParameterError, ErrorMsgs
 from spafe.fbanks.mel_fbanks import mel_filter_banks
