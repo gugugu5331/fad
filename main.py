@@ -96,14 +96,19 @@ def main(args: argparse.Namespace):
 
    
     # -------- datasets / loaders --------
+    num_workers = args.num_workers
+    if args.feature_device.startswith("cuda") and num_workers:
+        print(f"[info] feature_device is CUDA; forcing num_workers from {num_workers} to 0 to keep CUDA ops in main process.")
+        num_workers = 0
+
     train_dst = ASVspoof19TrainDataset(args.train_protocol, args.train_wave_dir,
-                                  pad_to=args.pad_to, args=args,algo=args.algo,device=args.device)
+                                  pad_to=args.pad_to, args=args,algo=args.algo,device=args.feature_device)
     dev_dst   = ASVspoof19TrainDataset(args.dev_protocol,   args.dev_wave_dir,
-                                  pad_to=args.pad_to,args=args,algo=args.algo,device=args.device)
+                                  pad_to=args.pad_to,args=args,algo=args.algo,device=args.feature_device)
     train_loader = DataLoader(train_dst, batch_size=args.batch_size, shuffle=True,
-                              num_workers=12, pin_memory=True)
+                              num_workers=num_workers, pin_memory=True)
     dev_loader   = DataLoader(dev_dst,   batch_size=args.batch_size, shuffle=False,
-                              num_workers=12, pin_memory=True)
+                              num_workers=num_workers, pin_memory=True)
 
     # -------- model --------
     model = FakeSpeechDetection(detectors=[RawNet2.Model(), ResNet18.Model(),DCT2D.Model()],
@@ -151,9 +156,9 @@ def main(args: argparse.Namespace):
 
         eval_ids = [ln.strip().split()[0] for ln in open(args.eval_list)]
         eval_dst = ASVspoof21EvalDataset(eval_ids, args.eval_wave_dir,
-                                       pad_to=args.pad_to, device=args.device)
+                                       pad_to=args.pad_to, device=args.feature_device)
         eval_loader = DataLoader(eval_dst, batch_size=args.batch_size,
-                                 shuffle=False, num_workers=8)
+                                 shuffle=False, num_workers=num_workers, pin_memory=True)
         out_file = args.output_dir / "best_040_0.9961_without_softmax.txt"
         out_file.parent.mkdir(exist_ok=True, parents=True)
         model.eval()
@@ -185,8 +190,10 @@ if __name__ == "__main__":
     ap.add_argument("--seed", type=int, default=1234)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--ckpt", type=Path)
+    ap.add_argument("--num_workers", type=int, default=12)
     ap.add_argument("--ckpt_dir", type=Path, default=Path("./ckpt/with_noise_4_resnet_rawnet_dct2d_1E-4_withklloss_50epoch_respectly/"))
     ap.add_argument("--output_dir", type=Path, default=Path("./scores/LA21/with_noise_4_resnet_rawnet_dct2d_1E-4_withklloss_50epoch_respectly/"))
+    ap.add_argument("--feature_device", default="cpu", help="Device used for on-the-fly feature computation (e.g., cuda or cpu)")
         ##===================================================Rawboost data augmentation ======================================================================#
 
     ap.add_argument('--algo', type=int, default=4,
