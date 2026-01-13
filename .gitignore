@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+
+# training artifacts
+ckpt/
+scores/
+feature_cache/
+clusters/
+logs/
+wandb/
+
+# model/checkpoint files
+*.pth
+*.pt
+*.ckpt
+
+# misc
+*.tar.gz
